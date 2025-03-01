@@ -1,42 +1,53 @@
+import requests
+from PIL import Image
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
-from PyQt6.QtGui import QPainter, QColor
-from PyQt6.QtCore import Qt, QPoint
-import random
+from io import BytesIO
+from first import get_parametrs
 
+# Пусть наше приложение предполагает запуск:
+# python search.py Москва, ул. Ак. Королева, 12
+# Тогда запрос к геокодеру формируется следующим образом:
+toponym_to_find = 'Москва, ул. Ак. Королева, 12'
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Случайные окружности")
-        self.setGeometry(100, 100, 800, 600)
-        self.pushButton = QPushButton("Добавить окружность", self)
-        self.pushButton.clicked.connect(self.draw_circle)
-        layout = QVBoxLayout()
-        layout.addWidget(self.pushButton)
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-        self.circles = []
+geocoder_api_server = "http://geocode-maps.yandex.ru/1.x/"
 
-    def draw_circle(self):
-        diameter = random.randint(20, 100)
-        x = random.randint(0, self.width() - diameter)
-        y = random.randint(0, self.height() - diameter)
-        color = QColor(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        self.circles.append((x, y, diameter, color))
-        self.update()
+geocoder_params = {
+    "apikey": "8013b162-6b42-4997-9691-77b7074026e0",
+    "geocode": toponym_to_find,
+    "format": "json"}
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        for circle in self.circles:
-            x, y, diameter, color = circle
-            painter.setBrush(color)
-            painter.drawEllipse(QPoint(x + diameter // 2, y + diameter // 2), diameter // 2, diameter // 2)
+response = requests.get(geocoder_api_server, params=geocoder_params)
 
+if not response:
+    # обработка ошибочной ситуации
+    pass
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+# Преобразуем ответ в json-объект
+json_response = response.json()
+print(json_response)
+# Получаем первый топоним из ответа геокодера.
+toponym = json_response["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
+# Координаты центра топонима:
+toponym_coodrinates = toponym["Point"]["pos"]
+# Долгота и широта:
+toponym_longitude, toponym_lattitude = toponym_coodrinates.split(" ")
+
+delta = "0.005"
+apikey = "f3a0fe3a-b07e-4840-a1da-06f18b2ddf13"
+raz = get_parametrs(toponym)
+print(raz)
+# Собираем параметры для запроса к StaticMapsAPI:
+map_params = {
+    "ll": ",".join([toponym_longitude, toponym_lattitude]),
+    "spn": raz,
+    "pt": ",".join([toponym_longitude, toponym_lattitude]),
+    "apikey": apikey,
+
+}
+
+map_api_server = "https://static-maps.yandex.ru/v1"
+# ... и выполняем запрос
+response = requests.get(map_api_server, params=map_params)
+im = BytesIO(response.content)
+opened_image = Image.open(im)
+opened_image.show()  # Создадим картинку и тут же ее покажем встроенным просмотрщиком операционной системы
